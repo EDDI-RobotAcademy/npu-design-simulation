@@ -1,0 +1,76 @@
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Seoul
+
+ARG PYTHON_VERSION=3.8
+ARG LLVM_VERSION=11
+ARG NUMPY_VERSION=1.19.5
+ARG SCIPY_VERSION=1.5.4
+ARG TVM_VERSION=v0.7
+
+# 1. 타임존 설정
+RUN apt-get update && apt-get install -y tzdata \
+    && ln -fs /usr/share/zoneinfo/Asia/Seoul /etc/localtime \
+    && dpkg-reconfigure --frontend noninteractive tzdata
+
+# 2. 기본 빌드 툴 설치
+RUN apt-get update && apt-get install -y \
+    build-essential git wget curl unzip pkg-config cmake ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3. Python 설치
+RUN apt-get update && apt-get install -y \
+    python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-distutils \
+    python${PYTHON_VERSION}-tk python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4. C/C++ 라이브러리
+RUN apt-get update && apt-get install -y \
+    libprotobuf-dev protobuf-compiler libprotoc-dev \
+    libboost-all-dev libedit-dev libnuma-dev zlib1g zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 5. 추가 빌드 툴
+RUN apt-get update && apt-get install -y \
+    m4 scons libgoogle-perftools-dev gfortran libopenblas-dev liblapack-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 6. LLVM 설치 (TVM v0.7 호환)
+RUN apt-get update && apt-get install -y \
+    llvm-${LLVM_VERSION} llvm-${LLVM_VERSION}-dev llvm-${LLVM_VERSION}-tools clang-${LLVM_VERSION} libclang-${LLVM_VERSION}-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 7. Python 패키지 설치 (버전 고정)
+RUN python${PYTHON_VERSION} -m pip install --upgrade pip setuptools wheel
+RUN python${PYTHON_VERSION} -m pip install \
+    numpy==${NUMPY_VERSION} \
+    decorator==5.1.1 \
+    attrs==23.1.0 \
+    tornado==6.3.2 \
+    scipy==${SCIPY_VERSION} \
+    typed-ast==1.5.4 \
+    onnx==1.14.0
+
+# 8. gem5 복사
+WORKDIR /root
+COPY gem5 /root/gem5
+
+# 9. TVM 설치 (v0.7 고정)
+WORKDIR /root
+RUN git clone --recursive https://github.com/apache/tvm.git || (echo "Retrying clone..." && sleep 5 && git clone --recursive https://github.com/apache/tvm.git)
+
+WORKDIR /root/tvm
+RUN git fetch --tags && git checkout ${TVM_VERSION} && git submodule update --init --recursive
+
+WORKDIR /root/tvm/build
+RUN cp ../cmake/config.cmake ./ \
+    && echo "set(USE_LLVM /usr/bin/llvm-config-${LLVM_VERSION})" >> config.cmake \
+    && echo "set(USE_VTA ON)" >> config.cmake \
+    && cmake .. \
+    && make -j8
+
+# 10. gem5 빌드
+WORKDIR /root/gem5
+CMD ["sh", "-c", "scons build/ARM/gem5.opt -j8"]
+

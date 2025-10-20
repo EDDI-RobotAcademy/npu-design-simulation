@@ -1,0 +1,14 @@
+version: "3.9"
+services:
+  npu-sim:
+    image: tvm.ci_arm:latest
+    container_name: npu-design-sim
+    tty: true
+    stdin_open: true
+    working_dir: /root/workspace
+    volumes:
+      - ./gem5:/root/gem5
+      - ./tvm:/root/tvm
+      - ./vta:/root/vta
+      - ./workspace:/root/workspace
+

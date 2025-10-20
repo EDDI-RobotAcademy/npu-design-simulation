@@ -1,0 +1,13 @@
+version: "3.9"
+services:
+  gem5:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./workspace:/root/workspace
+    stdin_open: true
+    tty: true
+    command: bash
+    # command: scons build/ARM/gem5.opt -j4
+

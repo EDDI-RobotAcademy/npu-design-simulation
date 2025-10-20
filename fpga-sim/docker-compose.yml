@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  fpga-simulator:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fpga-simulator
+    volumes:
+      - ./chipyard:/workspace/chipyard
+    tty: true
+    stdin_open: true
+    environment:
+      - PATH=/home/eddi/miniforge/bin:$PATH
+    user: eddi
+    working_dir: /workspace
+    command: bash
+    privileged: true
+
