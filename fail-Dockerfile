@@ -1,0 +1,109 @@
+FROM ubuntu:20.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG PYTHON_VERSION=3.8
+ARG NUMPY_VERSION=1.19.5
+ARG SCIPY_VERSION=1.5.4
+
+# -----------------------------
+# 기본 패키지 설치
+# -----------------------------
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    git \
+    wget \
+    curl \
+    unzip \
+    software-properties-common \
+    python${PYTHON_VERSION} \
+    python${PYTHON_VERSION}-dev \
+    python3-pip \
+    python3-setuptools \
+    python3-wheel \
+    llvm \
+    clang \
+    libtinfo-dev \
+    zlib1g-dev \
+    libedit-dev \
+    libxml2-dev \
+    scons \
+    m4 \
+    automake \
+    autoconf \
+    libtool \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------
+# 최신 CMake 설치
+# -----------------------------
+RUN apt-get update && apt-get install -y apt-transport-https ca-certificates gnupg software-properties-common \
+    && wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | apt-key add - \
+    && apt-add-repository 'deb https://apt.kitware.com/ubuntu/ focal main' \
+    && apt-get update \
+    && apt-get install -y cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------
+# Python 기본 경로 설정
+# -----------------------------
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python${PYTHON_VERSION} 1 \
+    && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
+RUN python -m pip install --upgrade pip setuptools wheel
+
+# -----------------------------
+# Python 의존성 설치
+# -----------------------------
+RUN python -m pip install \
+    numpy==${NUMPY_VERSION} \
+    decorator==5.1.1 \
+    attrs==23.1.0 \
+    tornado==6.3.2 \
+    scipy==${SCIPY_VERSION} \
+    typed-ast==1.5.4 \
+    onnx==1.14.0 \
+    h5py==3.8.0
+
+# -----------------------------
+# TVM + VTA 빌드
+# -----------------------------
+WORKDIR /root
+RUN git clone --recursive https://github.com/apache/tvm tvm
+
+WORKDIR /root/tvm
+RUN mkdir -p build
+RUN cp cmake/config.cmake build/
+
+WORKDIR /root/tvm/build
+RUN cmake .. \
+    -DUSE_LLVM=ON \
+    -DUSE_VTA=ON \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+RUN make -j$(nproc)
+
+WORKDIR /root/tvm/python
+RUN python3 -m pip install -e .
+
+# -----------------------------
+# gem5 설치
+# -----------------------------
+WORKDIR /root
+RUN git clone https://gem5.googlesource.com/public/gem5
+
+WORKDIR /root/gem5
+RUN scons build/ARM/gem5.opt -j$(nproc)
+
+# -----------------------------
+# 환경 변수 설정
+# -----------------------------
+ENV TVM_HOME=/root/tvm
+ENV GEM5_HOME=/root/gem5
+ENV PYTHONPATH=$TVM_HOME/python:$PYTHONPATH
+ENV PATH=$TVM_HOME/build:$GEM5_HOME/build/ARM:$PATH
+
+WORKDIR /root/workspace
+CMD ["/bin/bash"]
+
